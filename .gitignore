@@ -1,0 +1,4 @@
+.env
+whatsapp.db
+/plugin-whatsapp
+coverage/
