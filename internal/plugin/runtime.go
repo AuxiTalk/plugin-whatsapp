@@ -37,11 +37,40 @@ func (r *Runtime) Listen() error {
 	fmt.Fprintf(r.logs, "[plugin-whatsapp] ready db=%s\n", r.cfg.DBPath)
 
 	go func() {
-		_ = r.client.Connect(context.Background(), func(qr string) {
-			fmt.Fprintf(r.logs, "[whatsapp] QR: %s\n", qr)
-		}, func(msg whatsapp.Message) {
-			fmt.Fprintf(r.logs, "[whatsapp] msg from %s: %s\n", msg.SenderID, msg.Text)
-		})
+		_ = r.client.Connect(context.Background(),
+			func(qr string) {
+				_ = r.rpc.request("event.emit", map[string]any{
+					"type":   "whatsapp.qr",
+					"source": "whatsapp",
+					"payload": map[string]any{"code": qr},
+				})
+			},
+			func(msg whatsapp.Message) {
+				_ = r.rpc.request("event.emit", map[string]any{
+					"type":   "message.received",
+					"source": "whatsapp",
+					"payload": map[string]any{
+						"chatId":   msg.ChatID,
+						"senderId": msg.SenderID,
+						"text":     msg.Text,
+					},
+				})
+			},
+			func() {
+				_ = r.rpc.request("event.emit", map[string]any{
+					"type":   "whatsapp.connected",
+					"source": "whatsapp",
+					"payload": nil,
+				})
+			},
+			func() {
+				_ = r.rpc.request("event.emit", map[string]any{
+					"type":   "whatsapp.disconnected",
+					"source": "whatsapp",
+					"payload": nil,
+				})
+			},
+		)
 	}()
 
 	return r.rpc.Listen()
@@ -59,7 +88,12 @@ func (r *Runtime) handshake(_ json.RawMessage) (any, error) {
 	return map[string]any{
 		"pluginId":        "whatsapp",
 		"protocolVersion": "0.1",
-		"capabilities":     []string{"message.send"},
+		"capabilities": []string{
+			"message.send",
+			"whatsapp.request_qr",
+			"whatsapp.disconnect",
+			"whatsapp.status",
+		},
 	}, nil
 }
 
@@ -86,21 +120,47 @@ func (r *Runtime) capabilityCall(params json.RawMessage) (any, error) {
 	if err := json.Unmarshal(params, &req); err != nil {
 		return nil, err
 	}
-	if req.Name != "message.send" {
+
+	switch req.Name {
+	case "message.send":
+		return r.handleSend(req.Input)
+	case "whatsapp.request_qr":
+		return r.handleRequestQR()
+	case "whatsapp.disconnect":
+		return r.handleDisconnect()
+	case "whatsapp.status":
+		return r.handleStatus()
+	default:
 		return nil, fmt.Errorf("capability not found: %s", req.Name)
 	}
+}
 
-	var input struct {
+func (r *Runtime) handleSend(input json.RawMessage) (any, error) {
+	var msg struct {
 		ChatID string `json:"chatId"`
 		Text   string `json:"text"`
 	}
-	if err := json.Unmarshal(req.Input, &input); err != nil {
+	if err := json.Unmarshal(input, &msg); err != nil {
 		return nil, err
 	}
-
-	msgID, err := r.client.SendText(input.ChatID, input.Text)
+	msgID, err := r.client.SendText(msg.ChatID, msg.Text)
 	if err != nil {
 		return nil, err
 	}
 	return map[string]any{"sent": true, "messageId": msgID}, nil
+}
+
+func (r *Runtime) handleRequestQR() (any, error) {
+	fmt.Fprintln(r.logs, "[whatsapp] request_qr chamado")
+	return map[string]any{"requested": true}, nil
+}
+
+func (r *Runtime) handleDisconnect() (any, error) {
+	r.client.Disconnect()
+	fmt.Fprintln(r.logs, "[whatsapp] disconnect chamado")
+	return map[string]any{"disconnected": true}, nil
+}
+
+func (r *Runtime) handleStatus() (any, error) {
+	return map[string]any{"connected": false}, nil
 }

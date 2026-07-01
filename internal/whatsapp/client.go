@@ -20,6 +20,8 @@ type Client struct {
 	logs   io.Writer
 	onQR   func(string)
 	onMsg  func(Message)
+	onConnect func()
+	onDisconnect func()
 }
 
 type Message struct {
@@ -49,14 +51,20 @@ func NewClient(dbPath, deviceName string, logs io.Writer) (*Client, error) {
 	}, nil
 }
 
-func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Message)) error {
+func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Message), onConnect, onDisconnect func()) error {
 	c.onQR = onQR
 	c.onMsg = onMsg
+	c.onConnect = onConnect
+	c.onDisconnect = onDisconnect
 
 	c.client.AddEventHandler(c.eventHandler)
 
 	if c.client.Store.ID != nil {
-		return c.client.Connect()
+		err := c.client.Connect()
+		if err == nil && c.onConnect != nil {
+			c.onConnect()
+		}
+		return err
 	}
 
 	qrChan, _ := c.client.GetQRChannel(ctx)
@@ -70,6 +78,9 @@ func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Mess
 			c.onQR(evt.Code)
 		} else if evt.Event == "success" {
 			fmt.Fprintln(c.logs, "[whatsapp] login success")
+			if c.onConnect != nil {
+				c.onConnect()
+			}
 		}
 	}
 	return nil
@@ -77,6 +88,9 @@ func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Mess
 
 func (c *Client) Disconnect() {
 	c.client.Disconnect()
+	if c.onDisconnect != nil {
+		c.onDisconnect()
+	}
 }
 
 func (c *Client) SendText(chatJID, text string) (string, error) {
@@ -105,6 +119,14 @@ func (c *Client) eventHandler(evt interface{}) {
 				SenderID: v.Info.Sender.String(),
 				Text:     v.Message.GetConversation(),
 			})
+		}
+	case *events.Connected:
+		if c.onConnect != nil {
+			c.onConnect()
+		}
+	case *events.Disconnected:
+		if c.onDisconnect != nil {
+			c.onDisconnect()
 		}
 	}
 }

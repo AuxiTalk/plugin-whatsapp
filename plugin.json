@@ -6,5 +6,10 @@
   "entry": "",
   "kind": "input",
   "permissions": ["event.emit"],
-  "capabilities": [{"name": "message.send"}]
+  "capabilities": [
+    {"name": "message.send"},
+    {"name": "whatsapp.request_qr"},
+    {"name": "whatsapp.disconnect"},
+    {"name": "whatsapp.status"}
+  ]
 }

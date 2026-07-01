@@ -85,8 +85,24 @@ func (r *RPC) handleLine(line []byte) error {
 	return r.write(Response{JSONRPC: "2.0", ID: req.ID, Result: result})
 }
 
-func (r *RPC) write(resp Response) error {
-	data, err := json.Marshal(resp)
+func (r *RPC) write(message interface{}) error {
+	data, err := json.Marshal(message)
+	if err != nil {
+		return err
+	}
+	_, err = fmt.Fprintf(r.writer, "%s\n", data)
+	return err
+}
+
+func (r *RPC) request(method string, params any) error {
+	id := "evt-" + method
+	req := map[string]any{
+		"jsonrpc": "2.0",
+		"id":      id,
+		"method":  method,
+		"params":  params,
+	}
+	data, err := json.Marshal(req)
 	if err != nil {
 		return err
 	}

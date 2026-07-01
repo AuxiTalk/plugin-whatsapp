@@ -1,6 +1,8 @@
 package main
 
 import (
+	"context"
+	"fmt"
 	"log"
 	"os"
 
@@ -16,7 +18,12 @@ func main() {
 		log.Fatalf("runtime init: %v", err)
 	}
 
+	// Exemplo de QR no terminal (será movido para dentro do client depois)
+	fmt.Println("[whatsapp] aguardando QR... (implementação completa em próximo passo)")
+
 	if err := runtime.Listen(); err != nil {
 		log.Fatalf("runtime: %v", err)
 	}
+
+	_ = context.Background()
 }
