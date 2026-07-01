@@ -16,12 +16,13 @@ import (
 )
 
 type Client struct {
-	client *whatsmeow.Client
-	logs   io.Writer
-	onQR   func(string)
-	onMsg  func(Message)
-	onConnect func()
+	client       *whatsmeow.Client
+	logs         io.Writer
+	onQR         func(string)
+	onMsg        func(Message)
+	onConnect    func()
 	onDisconnect func()
+	connected    bool
 }
 
 type Message struct {
@@ -61,8 +62,11 @@ func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Mess
 
 	if c.client.Store.ID != nil {
 		err := c.client.Connect()
-		if err == nil && c.onConnect != nil {
-			c.onConnect()
+		if err == nil {
+			c.connected = true
+			if c.onConnect != nil {
+				c.onConnect()
+			}
 		}
 		return err
 	}
@@ -78,6 +82,7 @@ func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Mess
 			c.onQR(evt.Code)
 		} else if evt.Event == "success" {
 			fmt.Fprintln(c.logs, "[whatsapp] login success")
+			c.connected = true
 			if c.onConnect != nil {
 				c.onConnect()
 			}
@@ -88,9 +93,14 @@ func (c *Client) Connect(ctx context.Context, onQR func(string), onMsg func(Mess
 
 func (c *Client) Disconnect() {
 	c.client.Disconnect()
+	c.connected = false
 	if c.onDisconnect != nil {
 		c.onDisconnect()
 	}
+}
+
+func (c *Client) IsConnected() bool {
+	return c.connected
 }
 
 func (c *Client) SendText(chatJID, text string) (string, error) {
@@ -121,10 +131,12 @@ func (c *Client) eventHandler(evt interface{}) {
 			})
 		}
 	case *events.Connected:
+		c.connected = true
 		if c.onConnect != nil {
 			c.onConnect()
 		}
 	case *events.Disconnected:
+		c.connected = false
 		if c.onDisconnect != nil {
 			c.onDisconnect()
 		}
