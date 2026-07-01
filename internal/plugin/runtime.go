@@ -1,31 +1,49 @@
 package plugin
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
 
 	"github.com/auxitalk/plugin-whatsapp/internal/config"
+	"github.com/auxitalk/plugin-whatsapp/internal/whatsapp"
 )
 
 type Runtime struct {
-	rpc  *RPC
-	logs io.Writer
-	cfg  config.Config
+	rpc    *RPC
+	logs   io.Writer
+	cfg    config.Config
+	client *whatsapp.Client
 }
 
-func NewRuntime(input io.Reader, output io.Writer, logs io.Writer, cfg config.Config) *Runtime {
+func NewRuntime(input io.Reader, output io.Writer, logs io.Writer, cfg config.Config) (*Runtime, error) {
+	client, err := whatsapp.NewClient(cfg.DBPath, cfg.DeviceName, logs)
+	if err != nil {
+		return nil, err
+	}
+
 	r := &Runtime{
-		rpc:  NewRPC(input, output),
-		logs: logs,
-		cfg:  cfg,
+		rpc:    NewRPC(input, output),
+		logs:   logs,
+		cfg:    cfg,
+		client: client,
 	}
 	r.registerHandlers()
-	return r
+	return r, nil
 }
 
 func (r *Runtime) Listen() error {
 	fmt.Fprintf(r.logs, "[plugin-whatsapp] ready db=%s\n", r.cfg.DBPath)
+
+	go func() {
+		_ = r.client.Connect(context.Background(), func(qr string) {
+			fmt.Fprintf(r.logs, "[whatsapp] QR: %s\n", qr)
+		}, func(msg whatsapp.Message) {
+			fmt.Fprintf(r.logs, "[whatsapp] msg from %s: %s\n", msg.SenderID, msg.Text)
+		})
+	}()
+
 	return r.rpc.Listen()
 }
 
@@ -52,6 +70,7 @@ func (r *Runtime) start(_ json.RawMessage) (any, error) {
 
 func (r *Runtime) stop(_ json.RawMessage) (any, error) {
 	fmt.Fprintln(r.logs, "[plugin-whatsapp] stopped")
+	r.client.Disconnect()
 	return map[string]any{"stopped": true}, nil
 }
 
@@ -70,5 +89,18 @@ func (r *Runtime) capabilityCall(params json.RawMessage) (any, error) {
 	if req.Name != "message.send" {
 		return nil, fmt.Errorf("capability not found: %s", req.Name)
 	}
-	return map[string]any{"sent": true}, nil
+
+	var input struct {
+		ChatID string `json:"chatId"`
+		Text   string `json:"text"`
+	}
+	if err := json.Unmarshal(req.Input, &input); err != nil {
+		return nil, err
+	}
+
+	msgID, err := r.client.SendText(input.ChatID, input.Text)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{"sent": true, "messageId": msgID}, nil
 }

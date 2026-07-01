@@ -11,7 +11,10 @@ import (
 func main() {
 	cfg := config.Load()
 
-	runtime := plugin.NewRuntime(os.Stdin, os.Stdout, os.Stderr, cfg)
+	runtime, err := plugin.NewRuntime(os.Stdin, os.Stdout, os.Stderr, cfg)
+	if err != nil {
+		log.Fatalf("runtime init: %v", err)
+	}
 
 	if err := runtime.Listen(); err != nil {
 		log.Fatalf("runtime: %v", err)
