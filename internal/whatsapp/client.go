@@ -32,7 +32,8 @@ type Message struct {
 }
 
 func NewClient(dbPath, deviceName string, logs io.Writer) (*Client, error) {
-	container, err := sqlstore.New(context.Background(), "sqlite3", "file:"+dbPath+"?_foreign_keys=on", waLog.Noop)
+	dsn := fmt.Sprintf("file:%s?_foreign_keys=on&_journal=WAL&_busy_timeout=5000&_sync=1", dbPath)
+	container, err := sqlstore.New(context.Background(), "sqlite3", dsn, waLog.Noop)
 	if err != nil {
 		return nil, err
 	}
