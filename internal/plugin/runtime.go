@@ -10,11 +10,17 @@ import (
 	"github.com/auxitalk/plugin-whatsapp/internal/whatsapp"
 )
 
+type WhatsAppClient interface {
+	Connect(context.Context, func(string), func(whatsapp.Message), func(), func()) error
+	Disconnect()
+	SendText(chatJID, text string) (string, error)
+}
+
 type Runtime struct {
 	rpc    *RPC
 	logs   io.Writer
 	cfg    config.Config
-	client *whatsapp.Client
+	client WhatsAppClient
 }
 
 func NewRuntime(input io.Reader, output io.Writer, logs io.Writer, cfg config.Config) (*Runtime, error) {
@@ -22,7 +28,10 @@ func NewRuntime(input io.Reader, output io.Writer, logs io.Writer, cfg config.Co
 	if err != nil {
 		return nil, err
 	}
+	return NewRuntimeWithClient(input, output, logs, cfg, client), nil
+}
 
+func NewRuntimeWithClient(input io.Reader, output io.Writer, logs io.Writer, cfg config.Config, client WhatsAppClient) *Runtime {
 	r := &Runtime{
 		rpc:    NewRPC(input, output),
 		logs:   logs,
@@ -30,7 +39,7 @@ func NewRuntime(input io.Reader, output io.Writer, logs io.Writer, cfg config.Co
 		client: client,
 	}
 	r.registerHandlers()
-	return r, nil
+	return r
 }
 
 func (r *Runtime) Listen() error {
@@ -40,8 +49,8 @@ func (r *Runtime) Listen() error {
 		_ = r.client.Connect(context.Background(),
 			func(qr string) {
 				_ = r.rpc.request("event.emit", map[string]any{
-					"type":   "whatsapp.qr",
-					"source": "whatsapp",
+					"type":    "whatsapp.qr",
+					"source":  "whatsapp",
 					"payload": map[string]any{"code": qr},
 				})
 			},
@@ -58,15 +67,15 @@ func (r *Runtime) Listen() error {
 			},
 			func() {
 				_ = r.rpc.request("event.emit", map[string]any{
-					"type":   "whatsapp.connected",
-					"source": "whatsapp",
+					"type":    "whatsapp.connected",
+					"source":  "whatsapp",
 					"payload": nil,
 				})
 			},
 			func() {
 				_ = r.rpc.request("event.emit", map[string]any{
-					"type":   "whatsapp.disconnected",
-					"source": "whatsapp",
+					"type":    "whatsapp.disconnected",
+					"source":  "whatsapp",
 					"payload": nil,
 				})
 			},

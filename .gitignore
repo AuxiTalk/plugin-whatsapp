@@ -1,4 +1,7 @@
 .env
 whatsapp.db
+*.db
+*.db-*
 /plugin-whatsapp
+bin/
 coverage/
